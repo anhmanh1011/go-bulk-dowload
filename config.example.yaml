@@ -1,0 +1,45 @@
+account:
+  api_id: 0          # CHANGE ME — get from my.telegram.org
+  api_hash: ""       # CHANGE ME
+  session_file: sessions/main.session
+
+source_channel: -1001234567890
+target_channel: -1009876543210
+
+fetcher:
+  sessions: 6
+  chunk_size_bytes: 1048576
+  chunk_channel_cap: 64
+  job_channel_cap: 32
+  max_retries_per_chunk: 5
+  max_retries_per_job: 3
+
+splitter:
+  workers: 0          # 0 = runtime.NumCPU()
+  line_channel_cap: 4096
+
+processor:
+  workers: 0          # 0 = runtime.NumCPU() * 2
+  record_channel_cap: 4096
+
+writer:
+  output_dir: ./out
+  batch_size_mb: 20
+  flush_interval_sec: 30
+  output_channel_cap: 16
+
+uploader:
+  sessions: 2
+  parallel_parts: 4
+  upload_channel_cap: 4
+
+backpressure:
+  max_pending_output_files: 32
+
+state:
+  db_path: ./state.db
+
+logging:
+  level: info
+  format: json
+  progress_interval_sec: 30

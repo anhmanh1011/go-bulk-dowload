@@ -1,4 +1,4 @@
-.PHONY: build test test-race vet lint clean
+.PHONY: build test test-race integration vet lint clean
 
 build:
 	go build -o bin/tgpipe ./cmd/tgpipe
@@ -8,6 +8,9 @@ test:
 
 test-race:
 	go test -race -coverprofile=coverage.out ./...
+
+integration:
+	go test -race -timeout 60s ./tests/integration/...
 
 vet:
 	go vet ./...
