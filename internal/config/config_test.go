@@ -105,4 +105,7 @@ logging: {level: info, format: text, progress_interval_sec: 1}
 `)
 	_, err := config.Load(p)
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), "account.api_id")
+	assert.Contains(t, err.Error(), "account.api_hash")
+	assert.Contains(t, err.Error(), "account.session_file")
 }
