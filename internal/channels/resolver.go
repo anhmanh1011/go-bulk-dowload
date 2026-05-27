@@ -1,0 +1,52 @@
+// Package channels resolves Telegram channel access hashes at pipeline
+// startup so per-job RPCs can pass a fully-qualified InputPeerChannel
+// without re-querying messages.getDialogs.
+package channels
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/gotd/td/tg"
+)
+
+// Invoker is the subset of tg.Invoker the resolver needs. session.Pool
+// satisfies it; tests can supply a fake.
+type Invoker interface {
+	tg.Invoker
+}
+
+// Resolve walks the user's dialog list and returns the AccessHash for the
+// channel whose ChannelID == chatID. Errors if the channel is not in the
+// user's dialog list (the user must join/subscribe first).
+func Resolve(ctx context.Context, inv Invoker, chatID int64) (int64, error) {
+	api := tg.NewClient(inv)
+	req := &tg.MessagesGetDialogsRequest{
+		OffsetPeer: &tg.InputPeerEmpty{},
+		Limit:      500,
+	}
+	res, err := api.MessagesGetDialogs(ctx, req)
+	if err != nil {
+		return 0, fmt.Errorf("getDialogs: %w", err)
+	}
+	var chats []tg.ChatClass
+	switch v := res.(type) {
+	case *tg.MessagesDialogs:
+		chats = v.Chats
+	case *tg.MessagesDialogsSlice:
+		chats = v.Chats
+	default:
+		return 0, fmt.Errorf("unexpected dialogs response %T", res)
+	}
+	for _, c := range chats {
+		ch, ok := c.(*tg.Channel)
+		if !ok {
+			continue
+		}
+		if ch.ID == chatID {
+			return ch.AccessHash, nil
+		}
+	}
+	return 0, errors.New("channel not found in dialogs — make sure the account has joined it")
+}
