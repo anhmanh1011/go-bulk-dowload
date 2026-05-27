@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -35,11 +36,12 @@ type Config struct {
 }
 
 type clientPool struct {
-	gate    *FloodGate
-	clients []*telegram.Client
-	next    atomic.Uint64 // monotonic round-robin counter
-	closeFn func()
-	wg      sync.WaitGroup
+	gate      *FloodGate
+	clients   []*telegram.Client
+	next      atomic.Uint64 // monotonic round-robin counter
+	closeFn   func()
+	wg        sync.WaitGroup
+	closeOnce sync.Once
 }
 
 // Compile-time assertions.
@@ -84,24 +86,37 @@ func newPool(ctx context.Context, cfg Config, gate *FloodGate) (*clientPool, err
 		p.clients = append(p.clients, client)
 
 		ready := make(chan struct{})
+		errCh := make(chan error, 1)
 		p.wg.Add(1)
 		go func(c *telegram.Client) {
 			defer p.wg.Done()
 			// telegram.Client.Run blocks until the inner callback returns
 			// or ctx is cancelled. We signal readiness, then park on ctx
-			// so the client stays alive for the pool's lifetime. The
-			// returned error is intentionally swallowed: shutdown is
-			// driven by Close(), and per-RPC errors surface via Invoke.
-			_ = c.Run(poolCtx, func(ctx context.Context) error {
+			// so the client stays alive for the pool's lifetime. If Run
+			// returns an error *before* the callback fires (e.g. auth
+			// failure), `ready` is never closed; we surface the error
+			// via errCh so newPool's select doesn't block forever.
+			// context.Canceled is filtered out so the normal Close path
+			// — which cancels poolCtx — isn't misread as a startup error
+			// when an earlier client has already failed.
+			err := c.Run(poolCtx, func(ctx context.Context) error {
 				close(ready)
 				<-ctx.Done()
 				return nil
 			})
+			if err != nil && !errors.Is(err, context.Canceled) {
+				errCh <- err
+			}
 		}(client)
 
 		select {
 		case <-ready:
 			// client initialised; proceed to next.
+		case err := <-errCh:
+			// Run returned before the callback ever fired — auth failure,
+			// bad session, etc. Tear down and surface the original error.
+			_ = p.Close()
+			return nil, fmt.Errorf("client init: %w", err)
 		case <-poolCtx.Done():
 			// ctx cancelled before the client signalled ready — tear
 			// down cleanly and surface the cancellation.
@@ -135,11 +150,14 @@ func (p *clientPool) Invoke(ctx context.Context, input bin.Encoder, output bin.D
 func (p *clientPool) Size() int { return len(p.clients) }
 
 // Close cancels the pool context and blocks until every client goroutine
-// has returned. Safe to call multiple times.
+// has returned. Safe to call multiple times — the cancel func runs at
+// most once via sync.Once, and wg.Wait is itself idempotent.
 func (p *clientPool) Close() error {
-	if p.closeFn != nil {
-		p.closeFn()
-	}
+	p.closeOnce.Do(func() {
+		if p.closeFn != nil {
+			p.closeFn()
+		}
+	})
 	p.wg.Wait()
 	return nil
 }
@@ -153,7 +171,10 @@ func IsFloodWait(err error) (bool, int) {
 		return false, 0
 	}
 	if d, ok := tgerr.AsFloodWait(err); ok {
-		return true, int(d / time.Second)
+		// Round up: a sub-second wait truncates to 0 otherwise, which
+		// would make the caller skip the back-off entirely. CLAUDE.md §9
+		// specifies "time.Sleep(X+1)" for FLOOD_WAIT_X.
+		return true, int(d/time.Second) + 1
 	}
 	return false, 0
 }

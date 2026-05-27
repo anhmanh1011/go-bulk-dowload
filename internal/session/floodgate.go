@@ -51,6 +51,13 @@ func (g *FloodGate) Wait(ctx context.Context) error {
 		}
 		diff := time.Until(time.Unix(0, until))
 		if diff <= 0 {
+			// Best-effort reset of the stale deadline so subsequent Wait
+			// callers can take the fast path (until == 0) instead of
+			// re-computing diff. If Trigger races ahead and bumps `until`
+			// higher between our Load and CAS, the CAS fails and
+			// Trigger's value wins — that's correct: the monotonic-
+			// extension invariant is preserved.
+			g.until.CompareAndSwap(until, 0)
 			return nil
 		}
 		timer := time.NewTimer(diff)
@@ -60,6 +67,8 @@ func (g *FloodGate) Wait(ctx context.Context) error {
 			return ctx.Err()
 		case <-timer.C:
 			// Re-check: an extending Trigger() may have raised `until` while we slept.
+			// The next loop iteration will either find `until == 0` (fast path) or
+			// recompute diff; if diff <= 0 there, the CAS-reset above also fires.
 		}
 	}
 }
