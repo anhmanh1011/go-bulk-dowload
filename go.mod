@@ -1,6 +1,8 @@
 module github.com/manh/tgpipe
 
-go 1.25.6
+go 1.22
+
+toolchain go1.25.6
 
 require github.com/spf13/cobra v1.10.2
 
