@@ -15,7 +15,10 @@ import (
 // discarded; everything to the right of the anchor's colon is the pass.
 //
 // Strict: user must look like an email. Empty user, empty pass, or
-// non-email user → drop.
+// non-email user → drop. Emails on providers that have disabled basic-auth
+// IMAP login (Gmail, Yahoo, Microsoft consumer, Apple, Proton, …) are also
+// dropped — see no_plain_imap.go — because they're unusable for a plain
+// email:password IMAP scanner downstream.
 type UrlUserPassExtractor struct{}
 
 // Compile-time interface assertion.
@@ -58,6 +61,11 @@ func (e *UrlUserPassExtractor) Process(line []byte) (types.Record, bool, error) 
 		prev := bytes.LastIndexByte(line[:i], ':')
 		user := line[prev+1 : i]
 		if isValidEmail(user) {
+			if isPlainIMAPDisabled(user) {
+				// Valid email but the provider blocks basic-auth IMAP; further-left
+				// splits won't change the domain on this candidate, so just drop.
+				return types.Record{}, false, nil
+			}
 			// Email and Pass are sub-slices of `line`; splitter delivers a fresh copy
 			// per line, so they are safe to retain without our own copy.
 			return types.Record{Email: user, Pass: pass}, true, nil

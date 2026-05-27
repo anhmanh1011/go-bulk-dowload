@@ -33,6 +33,21 @@ func TestUrlUserPassExtractor(t *testing.T) {
 		{"https://site:user@x.com:", false, "", ""},
 		// Edge — whitespace in email → reject
 		{"https://site.com: user@x.com :pass", false, "", ""},
+		// IMAP disabled (basic auth blocked by provider) → drop
+		{"https://site.com:user@gmail.com:pass", false, "", ""},
+		{"https://site.com:user@YAHOO.com:pass", false, "", ""}, // case-insensitive
+		{"https://site.com:foo@hotmail.co.uk:bar", false, "", ""},
+		{"https://site.com:foo@outlook.com:bar", false, "", ""},
+		{"https://site.com:foo@icloud.com:bar", false, "", ""},
+		{"https://site.com:foo@proton.me:bar", false, "", ""},
+		// Providers that still allow plain IMAP → keep
+		{"https://site.com:foo@mail.ru:bar", true, "foo@mail.ru", "bar"},
+		{"https://site.com:foo@yandex.ru:bar", true, "foo@yandex.ru", "bar"},
+		{"https://site.com:foo@gmx.de:bar", true, "foo@gmx.de", "bar"},
+		// Custom / corporate domain → keep
+		{"https://site.com:user@corp.example:secret", true, "user@corp.example", "secret"},
+		// Defense: not gmail.com just because suffix matches
+		{"https://site.com:user@notgmail.com:secret", true, "user@notgmail.com", "secret"},
 	}
 	p := &processor.UrlUserPassExtractor{}
 	for _, tc := range cases {
