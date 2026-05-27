@@ -96,3 +96,19 @@ func TestSplitter_ContextCancel(t *testing.T) {
 	close(in)
 	close(out)
 }
+
+func TestSplitter_SingleChunkNoNewline(t *testing.T) {
+	t.Parallel()
+	s := splitter.New(1, &fakeTracker{})
+	in := make(chan types.Chunk, 1)
+	out := make(chan types.Line, 4)
+	in <- types.Chunk{MsgID: 1, Seq: 0, IsLast: true, Data: []byte("nonewline")}
+	close(in)
+	require.NoError(t, s.Run(context.Background(), in, out))
+	close(out)
+	var got []string
+	for ln := range out {
+		got = append(got, string(ln.Data))
+	}
+	assert.Empty(t, got, "single-chunk file with no newline should emit nothing")
+}

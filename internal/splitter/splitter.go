@@ -17,7 +17,6 @@ type Tracker interface {
 // remainder buffer to stitch lines across 1 MB chunk boundaries. Edge bytes
 // (head of Seq==0, tail of IsLast) are dropped exactly once per source.
 type Splitter struct {
-	workers int
 	tracker Tracker
 }
 
@@ -26,7 +25,7 @@ func New(workers int, tr Tracker) *Splitter {
 		slog.Warn("splitter: workers>1 ignored — splitter is single-goroutine by design",
 			"requested", workers)
 	}
-	return &Splitter{workers: 1, tracker: tr}
+	return &Splitter{tracker: tr}
 }
 
 // Run consumes chunks until `in` is closed or ctx is cancelled. Never returns
@@ -39,6 +38,7 @@ func (s *Splitter) Run(ctx context.Context, in <-chan types.Chunk, out chan<- ty
 		copy(buf, line)
 		select {
 		case <-ctx.Done():
+			slog.Debug("splitter: emit cancelled mid-line", "msg_id", msgID)
 			return false
 		case out <- types.Line{MsgID: msgID, Data: buf}:
 			return true
@@ -55,6 +55,7 @@ func (s *Splitter) Run(ctx context.Context, in <-chan types.Chunk, out chan<- ty
 			}
 			data := chunk.Data
 
+			// data here aliases chunk.Data; safe because emit() and remainder code both copy.
 			if chunk.Seq == 0 {
 				if i := bytes.IndexByte(data, '\n'); i >= 0 {
 					data = data[i+1:]
