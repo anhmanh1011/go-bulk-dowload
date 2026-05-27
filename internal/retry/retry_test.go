@@ -11,6 +11,7 @@ import (
 )
 
 func TestWithBackoff_SucceedsFirstTry(t *testing.T) {
+	t.Parallel()
 	calls := 0
 	err := retry.WithBackoff(context.Background(), 3, func() error {
 		calls++
@@ -21,6 +22,7 @@ func TestWithBackoff_SucceedsFirstTry(t *testing.T) {
 }
 
 func TestWithBackoff_RetriesThenSucceeds(t *testing.T) {
+	t.Parallel()
 	calls := 0
 	err := retry.WithBackoff(context.Background(), 5, func() error {
 		calls++
@@ -34,6 +36,7 @@ func TestWithBackoff_RetriesThenSucceeds(t *testing.T) {
 }
 
 func TestWithBackoff_NonRetryableStopsImmediately(t *testing.T) {
+	t.Parallel()
 	calls := 0
 	terminal := errors.New("permanent failure")
 	err := retry.WithBackoff(context.Background(), 5, func() error {
@@ -45,6 +48,7 @@ func TestWithBackoff_NonRetryableStopsImmediately(t *testing.T) {
 }
 
 func TestWithBackoff_ExhaustsAttempts(t *testing.T) {
+	t.Parallel()
 	calls := 0
 	err := retry.WithBackoff(context.Background(), 3, func() error {
 		calls++
@@ -55,6 +59,7 @@ func TestWithBackoff_ExhaustsAttempts(t *testing.T) {
 }
 
 func TestWithBackoff_RespectsCancel(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	calls := 0
 	go func() {

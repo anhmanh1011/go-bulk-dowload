@@ -38,7 +38,7 @@ func WithBackoff(ctx context.Context, maxAttempts int, op func() error) error {
 	backoff := 500 * time.Millisecond
 	const maxBackoff = 8 * time.Second
 	var lastErr error
-	for attempt := 0; attempt < maxAttempts; attempt++ {
+	for attempt := range maxAttempts {
 		err := op()
 		if err == nil {
 			return nil
