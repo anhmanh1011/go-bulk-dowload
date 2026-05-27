@@ -99,7 +99,7 @@ func (f *Fetcher) Run(ctx context.Context, jobs <-chan state.Job, out chan<- typ
 						return
 					}
 					if err := f.fetchJob(ctx, job, out); err != nil {
-						if errors.Is(err, context.Canceled) {
+						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
 						}
 						slog.Error("fetch job",
@@ -129,6 +129,10 @@ func (f *Fetcher) fetchJob(ctx context.Context, job state.Job, out chan<- types.
 		AccessHash:    job.AccessHash,
 		FileReference: job.FileReference,
 	}
+	req := &tg.UploadGetFileRequest{
+		Location: loc,
+		Limit:    f.cfg.ChunkSizeBytes,
+	}
 
 	for seq := range totalChunks {
 		select {
@@ -137,19 +141,15 @@ func (f *Fetcher) fetchJob(ctx context.Context, job state.Job, out chan<- types.
 		default:
 		}
 
-		offset := int64(seq) * int64(f.cfg.ChunkSizeBytes)
+		req.Offset = int64(seq) * int64(f.cfg.ChunkSizeBytes)
 		var data []byte
 		err := retry.WithBackoff(ctx, f.cfg.MaxRetriesPerChunk, func() error {
-			res, invokeErr := f.api.UploadGetFile(ctx, &tg.UploadGetFileRequest{
-				Location: loc,
-				Offset:   offset,
-				Limit:    f.cfg.ChunkSizeBytes,
-			})
+			res, invokeErr := f.api.UploadGetFile(ctx, req)
 			if invokeErr != nil {
 				if tgerr.Is(invokeErr, "FILE_REFERENCE_EXPIRED") {
 					f.recorder.IncFileRefExpired()
 					if refreshErr := f.refreshFileReference(ctx, &job, loc); refreshErr != nil {
-						return refreshErr
+						return retry.Retryable(fmt.Errorf("refresh ref: %w", refreshErr))
 					}
 					return retry.Retryable(invokeErr)
 				}
