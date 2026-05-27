@@ -6,6 +6,10 @@ import (
 	"time"
 )
 
+// secondsToDuration converts a whole-second count (as Telegram returns in
+// FLOOD_WAIT_X errors) into a time.Duration.
+func secondsToDuration(s int) time.Duration { return time.Duration(s) * time.Second }
+
 // FloodGate coordinates account-wide FLOOD_WAIT pauses across both
 // fetch and upload sub-pools. When the Telegram API returns FLOOD_WAIT_X
 // on any session, every other session on the same account should also
