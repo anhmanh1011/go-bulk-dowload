@@ -38,6 +38,7 @@ func sampleJob(msgID int64) state.Job {
 }
 
 func TestStore_InsertAndPick(t *testing.T) {
+	t.Parallel()
 	s := mustOpen(t)
 	ctx := context.Background()
 	for i := int64(1); i <= 5; i++ {
@@ -56,6 +57,7 @@ func TestStore_InsertAndPick(t *testing.T) {
 }
 
 func TestStore_MarkDone(t *testing.T) {
+	t.Parallel()
 	s := mustOpen(t)
 	ctx := context.Background()
 	require.NoError(t, s.InsertJobIfAbsent(ctx, sampleJob(1)))
@@ -68,6 +70,7 @@ func TestStore_MarkDone(t *testing.T) {
 }
 
 func TestStore_ResumeResetsInProgress(t *testing.T) {
+	t.Parallel()
 	s, err := state.Open(":memory:")
 	require.NoError(t, err)
 	ctx := context.Background()
@@ -84,6 +87,7 @@ func TestStore_ResumeResetsInProgress(t *testing.T) {
 }
 
 func TestStore_UpdateFileReference(t *testing.T) {
+	t.Parallel()
 	s := mustOpen(t)
 	ctx := context.Background()
 	require.NoError(t, s.InsertJobIfAbsent(ctx, sampleJob(1)))
@@ -92,6 +96,7 @@ func TestStore_UpdateFileReference(t *testing.T) {
 }
 
 func TestStore_MarkFailed(t *testing.T) {
+	t.Parallel()
 	s := mustOpen(t)
 	ctx := context.Background()
 	require.NoError(t, s.InsertJobIfAbsent(ctx, sampleJob(1)))
@@ -104,6 +109,7 @@ func TestStore_MarkFailed(t *testing.T) {
 }
 
 func TestStore_InsertJobIfAbsent_Idempotent(t *testing.T) {
+	t.Parallel()
 	s := mustOpen(t)
 	ctx := context.Background()
 	require.NoError(t, s.InsertJobIfAbsent(ctx, sampleJob(1)))
@@ -115,6 +121,7 @@ func TestStore_InsertJobIfAbsent_Idempotent(t *testing.T) {
 }
 
 func TestStore_PickPendingConcurrent(t *testing.T) {
+	t.Parallel()
 	s := mustOpen(t)
 	ctx := context.Background()
 	for i := int64(1); i <= 30; i++ {

@@ -91,7 +91,7 @@ func (s *Store) PickPending(ctx context.Context, n int) ([]Job, error) {
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("iterate pending rows: %w", err)
 	}
 	if len(picked) == 0 {
 		return nil, nil
@@ -128,7 +128,10 @@ func (s *Store) MarkDone(ctx context.Context, msgID int64, outputPath string) er
 	if err != nil {
 		return fmt.Errorf("mark done %d: %w", msgID, err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("mark done rows affected %d: %w", msgID, err)
+	}
 	if n == 0 {
 		return fmt.Errorf("mark done: msg_id %d not found", msgID)
 	}
