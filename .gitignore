@@ -1,0 +1,25 @@
+# Binaries
+/tgpipe
+/tgpipe.exe
+/bin/
+
+# Test + coverage
+*.out
+*.test
+coverage.html
+
+# Local state
+*.db
+*.db-wal
+*.db-shm
+/out/
+/sessions/
+
+# Config (only committed: config.example.yaml)
+config.yaml
+config.local.yaml
+
+# IDE
+.idea/
+.vscode/
+*.swp
