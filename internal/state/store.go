@@ -149,6 +149,21 @@ func (s *Store) MarkFailed(ctx context.Context, msgID int64, errMsg string) erro
 	return nil
 }
 
+// IncRetries atomically increments the retries column for msgID and returns
+// the new value. Used by the fetcher to bound per-job attempts (so a poison
+// file doesn't sit "in_progress" through restart cycles forever).
+func (s *Store) IncRetries(ctx context.Context, msgID int64) (int64, error) {
+	var n int64
+	err := s.db.QueryRowContext(ctx,
+		`UPDATE jobs SET retries = retries + 1, updated_at = ? WHERE msg_id = ? RETURNING retries`,
+		time.Now().Unix(), msgID,
+	).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("inc retries %d: %w", msgID, err)
+	}
+	return n, nil
+}
+
 func (s *Store) UpdateFileReference(ctx context.Context, msgID int64, ref []byte) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE jobs SET file_reference=?, updated_at=? WHERE msg_id=?`,

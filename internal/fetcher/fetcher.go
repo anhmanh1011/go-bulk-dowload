@@ -28,12 +28,14 @@ import (
 // Store is the subset of state.Store the fetcher needs.
 type Store interface {
 	UpdateFileReference(ctx context.Context, msgID int64, ref []byte) error
+	IncRetries(ctx context.Context, msgID int64) (int64, error)
 }
 
 // Tracker is the subset of tracker.SourceTracker the fetcher needs.
 // (ChunkConsumed lives downstream in the Splitter, not here.)
 type Tracker interface {
 	Register(msgID int64, totalChunks int)
+	Fail(ctx context.Context, msgID int64, errMsg string) error
 }
 
 // Recorder receives telemetry counters from the fetcher. All methods must be
@@ -53,6 +55,7 @@ type Config struct {
 	Sessions           int
 	ChunkSizeBytes     int
 	MaxRetriesPerChunk int
+	MaxRetriesPerJob   int
 }
 
 // Fetcher pulls Jobs and produces Chunks.
@@ -108,6 +111,7 @@ func (f *Fetcher) Run(ctx context.Context, jobs <-chan state.Job, out chan<- typ
 							"msg_id", job.MsgID,
 							"err", err,
 						)
+						f.handleJobFailure(ctx, job.MsgID, err)
 					}
 				}
 			}
@@ -115,6 +119,23 @@ func (f *Fetcher) Run(ctx context.Context, jobs <-chan state.Job, out chan<- typ
 	}
 	wg.Wait()
 	return nil
+}
+
+// handleJobFailure bumps the persisted retry counter for msgID and, when the
+// per-job ceiling is reached, asks the tracker to mark the row failed. Below
+// the ceiling the row stays in_progress — Store.Init's resume sweep at the
+// next startup will flip it back to pending so the next run can try again.
+func (f *Fetcher) handleJobFailure(ctx context.Context, msgID int64, cause error) {
+	n, err := f.store.IncRetries(ctx, msgID)
+	if err != nil {
+		slog.Error("inc retries", "stage", "fetcher", "msg_id", msgID, "err", err)
+		return
+	}
+	if f.cfg.MaxRetriesPerJob > 0 && n >= int64(f.cfg.MaxRetriesPerJob) {
+		if failErr := f.tracker.Fail(ctx, msgID, cause.Error()); failErr != nil {
+			slog.Error("mark failed", "stage", "fetcher", "msg_id", msgID, "err", failErr)
+		}
+	}
 }
 
 // fetchJob walks the document chunk-by-chunk in Seq order. Chunks for one

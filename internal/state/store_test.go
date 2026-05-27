@@ -120,6 +120,22 @@ func TestStore_InsertJobIfAbsent_Idempotent(t *testing.T) {
 	assert.Len(t, jobs, 1)
 }
 
+func TestStore_IncRetries(t *testing.T) {
+	t.Parallel()
+	s := mustOpen(t)
+	ctx := context.Background()
+	require.NoError(t, s.InsertJobIfAbsent(ctx, sampleJob(1)))
+	n, err := s.IncRetries(ctx, 1)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), n)
+	n, err = s.IncRetries(ctx, 1)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), n)
+	n, err = s.IncRetries(ctx, 1)
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), n)
+}
+
 func TestStore_PickPendingConcurrent(t *testing.T) {
 	t.Parallel()
 	s := mustOpen(t)

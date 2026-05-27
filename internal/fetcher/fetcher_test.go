@@ -66,6 +66,26 @@ func (p *fakePool) Close() error { return nil }
 type fakeStore struct{}
 
 func (fakeStore) UpdateFileReference(context.Context, int64, []byte) error { return nil }
+func (fakeStore) IncRetries(context.Context, int64) (int64, error)         { return 0, nil }
+
+// retryCountingStore reports a monotonic retry count and remembers which
+// msg_ids were incremented. Used to drive the per-job retry ceiling test.
+type retryCountingStore struct {
+	mu      sync.Mutex
+	retries map[int64]int64
+}
+
+func (r *retryCountingStore) UpdateFileReference(context.Context, int64, []byte) error { return nil }
+
+func (r *retryCountingStore) IncRetries(_ context.Context, msgID int64) (int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.retries == nil {
+		r.retries = map[int64]int64{}
+	}
+	r.retries[msgID]++
+	return r.retries[msgID], nil
+}
 
 type capturingStore struct {
 	onUpdate func(ctx context.Context, msgID int64, ref []byte) error
@@ -75,9 +95,12 @@ func (c *capturingStore) UpdateFileReference(ctx context.Context, msgID int64, r
 	return c.onUpdate(ctx, msgID, ref)
 }
 
+func (c *capturingStore) IncRetries(context.Context, int64) (int64, error) { return 0, nil }
+
 type fakeTracker struct {
 	mu         sync.Mutex
 	registered map[int64]int
+	failed     map[int64]string
 }
 
 func (f *fakeTracker) Register(id int64, total int) {
@@ -87,6 +110,16 @@ func (f *fakeTracker) Register(id int64, total int) {
 		f.registered = map[int64]int{}
 	}
 	f.registered[id] = total
+}
+
+func (f *fakeTracker) Fail(_ context.Context, id int64, msg string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.failed == nil {
+		f.failed = map[int64]string{}
+	}
+	f.failed[id] = msg
+	return nil
 }
 
 type fakeRecorder struct {
@@ -247,4 +280,43 @@ func TestFetcher_RefreshesFileReferenceOnExpired(t *testing.T) {
 	storeMu.Lock()
 	defer storeMu.Unlock()
 	assert.Equal(t, []byte{9, 9, 9}, storeUpdatedTo)
+}
+
+// When the fetcher exhausts MaxRetriesPerChunk on a hard-fail and the persisted
+// retry count crosses MaxRetriesPerJob, the source must be flipped to failed
+// via Tracker.Fail. Below the ceiling it stays in_progress (Init resets it on
+// next startup).
+func TestFetcher_FailsJobAfterRetryCeiling(t *testing.T) {
+	t.Parallel()
+	pool := &fakePool{}
+	pool.invokeOverride = func(input bin.Encoder, _ bin.Decoder) error {
+		if _, ok := input.(*tg.UploadGetFileRequest); ok {
+			return errors.New("permanent fetch error")
+		}
+		return errors.New("unhandled rpc")
+	}
+	store := &retryCountingStore{}
+	tr := &fakeTracker{}
+	gate := &session.FloodGate{}
+	rec := &fakeRecorder{}
+	f := fetcher.New(pool, store, tr, gate, rec, fetcher.Config{
+		Sessions: 1, ChunkSizeBytes: 1024, MaxRetriesPerChunk: 1, MaxRetriesPerJob: 2,
+	})
+
+	jobs := make(chan state.Job, 2)
+	out := make(chan types.Chunk, 4)
+	jobs <- state.Job{MsgID: 7, FileID: 1, AccessHash: 1, FileReference: []byte{1}, Size: 1024}
+	jobs <- state.Job{MsgID: 7, FileID: 1, AccessHash: 1, FileReference: []byte{1}, Size: 1024}
+	close(jobs)
+	go func() { require.NoError(t, f.Run(context.Background(), jobs, out)); close(out) }()
+	for range out {
+	}
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	assert.Equal(t, int64(2), store.retries[7], "IncRetries called once per job attempt")
+	_, failed := tr.failed[7]
+	assert.True(t, failed, "Tracker.Fail invoked after the second attempt crosses the ceiling")
 }

@@ -117,6 +117,7 @@ func (p *Pipeline) Run(ctx context.Context) error {
 		Sessions:           p.cfg.Fetcher.Sessions,
 		ChunkSizeBytes:     p.cfg.Fetcher.ChunkSizeBytes,
 		MaxRetriesPerChunk: p.cfg.Fetcher.MaxRetriesPerChunk,
+		MaxRetriesPerJob:   p.cfg.Fetcher.MaxRetriesPerJob,
 	})
 	spl := splitter.New(splWorkers, p.tracker)
 	proc := processor.New(procWorkers, &processor.UrlUserPassExtractor{}, p.counters)
