@@ -149,7 +149,7 @@ func (f *Fetcher) fetchJob(ctx context.Context, job state.Job, out chan<- types.
 				if tgerr.Is(invokeErr, "FILE_REFERENCE_EXPIRED") {
 					f.recorder.IncFileRefExpired()
 					if refreshErr := f.refreshFileReference(ctx, &job, loc); refreshErr != nil {
-						return retry.Retryable(fmt.Errorf("refresh ref: %w", refreshErr))
+						return retry.Retryable(refreshErr)
 					}
 					return retry.Retryable(invokeErr)
 				}
