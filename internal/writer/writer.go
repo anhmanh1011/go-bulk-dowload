@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sync/atomic"
 	"time"
 
 	"github.com/manh/tgpipe/internal/types"
@@ -29,16 +28,15 @@ type Writer struct {
 	cfg     Config
 	gate    *BackpressureGate
 	tracker Tracker
-	seq     atomic.Int32
+	// seq is owned by the single Run goroutine; not safe for concurrent Run calls.
+	seq int
 }
 
 func New(cfg Config, gate *BackpressureGate, tr Tracker) *Writer {
 	if cfg.BatchSeqStart < 1 {
 		cfg.BatchSeqStart = 1
 	}
-	w := &Writer{cfg: cfg, gate: gate, tracker: tr}
-	w.seq.Store(int32(cfg.BatchSeqStart - 1))
-	return w
+	return &Writer{cfg: cfg, gate: gate, tracker: tr, seq: cfg.BatchSeqStart - 1}
 }
 
 // Run consumes Records from `in`, batches them in-memory up to BatchSizeMB or
@@ -78,7 +76,8 @@ func (w *Writer) Run(ctx context.Context, in <-chan types.Record, out chan<- typ
 				return err
 			}
 		}
-		seq := int(w.seq.Add(1))
+		w.seq++
+		seq := w.seq
 		path := filepath.Join(w.cfg.OutputDir,
 			fmt.Sprintf("out_%d_%04d.txt", time.Now().Unix(), seq))
 		f, err := os.Create(path)
@@ -108,7 +107,7 @@ func (w *Writer) Run(ctx context.Context, in <-chan types.Record, out chan<- typ
 		case out <- of:
 		}
 		buf.Reset()
-		srcSet = make(map[int64]struct{})
+		clear(srcSet)
 		lineCount = 0
 		resetTimer()
 		return nil

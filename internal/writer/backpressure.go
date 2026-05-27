@@ -24,6 +24,12 @@ func (g *BackpressureGate) Acquire(ctx context.Context) error {
 	if g.MaxFiles <= 0 {
 		return nil
 	}
+	var timer *time.Timer
+	defer func() {
+		if timer != nil {
+			timer.Stop()
+		}
+	}()
 	for {
 		n, err := countFiles(g.Dir)
 		if err != nil {
@@ -32,10 +38,15 @@ func (g *BackpressureGate) Acquire(ctx context.Context) error {
 		if n < g.MaxFiles {
 			return nil
 		}
+		if timer == nil {
+			timer = time.NewTimer(g.pollEvery)
+		} else {
+			timer.Reset(g.pollEvery)
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(g.pollEvery):
+		case <-timer.C:
 		}
 	}
 }
