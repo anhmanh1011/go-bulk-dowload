@@ -44,6 +44,12 @@ func (e *UrlUserPassExtractor) Process(line []byte) (types.Record, bool, error) 
 			break
 		}
 		pass := line[i+1:]
+		// Defensive: strip a trailing CR so CRLF-terminated input doesn't
+		// produce records with embedded carriage returns. Splitter splits
+		// on '\n' only, so a stray '\r' can ride along on the last field.
+		if len(pass) > 0 && pass[len(pass)-1] == '\r' {
+			pass = pass[:len(pass)-1]
+		}
 		if len(pass) == 0 {
 			// Empty pass for this anchor — try a further-left colon.
 			right = i
@@ -70,7 +76,8 @@ func isValidEmail(b []byte) bool {
 	if at <= 0 || at == len(b)-1 {
 		return false
 	}
-	if bytes.Count(b, []byte{'@'}) != 1 {
+	// Check there's exactly one '@' — no later occurrence.
+	if bytes.IndexByte(b[at+1:], '@') >= 0 {
 		return false
 	}
 	local := b[:at]

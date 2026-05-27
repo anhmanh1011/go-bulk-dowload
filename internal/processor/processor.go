@@ -4,6 +4,7 @@ import (
 	"context"
 	"runtime"
 	"sync"
+	"sync/atomic"
 
 	"github.com/manh/tgpipe/internal/types"
 )
@@ -30,10 +31,11 @@ func New(workers int, impl LineProcessor, rec Recorder) *Processor {
 }
 
 // Run consumes lines from `in` until it's closed or ctx is cancelled.
-// Never returns an error — failures from impl.Process are fatal and
-// propagated via ctx by upstream coordination, but here we just stop
-// the worker on first error to avoid masking it with downstream sends.
+// A non-nil error from impl.Process is fatal: the first such error is
+// captured atomically and returned to the caller so the pipeline
+// orchestrator (errgroup) can tear down all stages.
 func (p *Processor) Run(ctx context.Context, in <-chan types.Line, out chan<- types.Record) error {
+	var firstErr atomic.Pointer[error]
 	var wg sync.WaitGroup
 	for range p.workers {
 		wg.Add(1)
@@ -49,6 +51,7 @@ func (p *Processor) Run(ctx context.Context, in <-chan types.Line, out chan<- ty
 					}
 					rec, keep, err := p.impl.Process(ln.Data)
 					if err != nil {
+						firstErr.CompareAndSwap(nil, &err)
 						return
 					}
 					if !keep {
@@ -67,5 +70,8 @@ func (p *Processor) Run(ctx context.Context, in <-chan types.Line, out chan<- ty
 		}()
 	}
 	wg.Wait()
+	if ep := firstErr.Load(); ep != nil {
+		return *ep
+	}
 	return nil
 }
