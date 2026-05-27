@@ -84,6 +84,29 @@ func (p *fakePool) Invoke(_ context.Context, in bin.Encoder, out bin.Decoder) er
 		}
 		return roundTrip(p.t, &tg.MessagesDialogsBox{Dialogs: dlg}, out)
 
+	case *tg.ChannelsGetFullChannelRequest:
+		// VerifyPostRights precheck — return a megagroup-style channel with
+		// no banned rights so the precheck passes.
+		ic, ok := r.Channel.(*tg.InputChannel)
+		if !ok {
+			return fmt.Errorf("unexpected input channel type %T", r.Channel)
+		}
+		full := &tg.MessagesChatFull{
+			FullChat: &tg.ChannelFull{
+				ID:        ic.ChannelID,
+				ChatPhoto: &tg.PhotoEmpty{},
+			},
+			Chats: []tg.ChatClass{
+				&tg.Channel{
+					ID:         ic.ChannelID,
+					AccessHash: ic.AccessHash,
+					Photo:      &tg.ChatPhotoEmpty{},
+					Megagroup:  true,
+				},
+			},
+		}
+		return roundTrip(p.t, full, out)
+
 	default:
 		return fmt.Errorf("unhandled %T", r)
 	}

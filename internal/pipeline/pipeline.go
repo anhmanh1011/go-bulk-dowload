@@ -76,6 +76,11 @@ func (p *Pipeline) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("resolve target channel access hash: %w", err)
 	}
+	// Spec §0 Q9: precheck Channel B for post rights — fail-fast at startup
+	// rather than after the first batch reaches the uploader.
+	if err := channels.VerifyPostRights(ctx, p.uploadPool, p.cfg.TargetChannel, dstHash); err != nil {
+		return fmt.Errorf("verify target channel post rights: %w", err)
+	}
 	slog.Info("channels resolved", "stage", "pipeline",
 		"source", p.cfg.SourceChannel, "src_hash", srcHash,
 		"target", p.cfg.TargetChannel)

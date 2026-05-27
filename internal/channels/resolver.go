@@ -50,3 +50,44 @@ func Resolve(ctx context.Context, inv Invoker, chatID int64) (int64, error) {
 	}
 	return 0, errors.New("channel not found in dialogs — make sure the account has joined it")
 }
+
+// VerifyPostRights calls messages.getFullChannel and rejects when the account
+// lacks send-media privileges on the channel. Used at pipeline startup as a
+// fail-fast precheck for the upload target — surfaces a misconfigured target
+// in seconds rather than after the first batch reaches the uploader.
+//
+// Per Telegram MTProto, posting to a broadcast channel requires either:
+//   - admin rights with PostMessages permission, OR
+//   - the channel is a megagroup the account can send to (no broadcast flag)
+//
+// Banned rights with SendMedia=true also blocks publishing. This function
+// errors when posting would fail; nil means the precheck passed.
+func VerifyPostRights(ctx context.Context, inv Invoker, chatID, accessHash int64) error {
+	api := tg.NewClient(inv)
+	res, err := api.ChannelsGetFullChannel(ctx, &tg.InputChannel{
+		ChannelID:  chatID,
+		AccessHash: accessHash,
+	})
+	if err != nil {
+		return fmt.Errorf("getFullChannel: %w", err)
+	}
+	for _, c := range res.Chats {
+		ch, ok := c.(*tg.Channel)
+		if !ok || ch.ID != chatID {
+			continue
+		}
+		if br, ok := ch.GetBannedRights(); ok && br.SendMedia {
+			return errors.New("verify post rights: account is banned from sending media on target channel")
+		}
+		// Broadcast channels require admin rights with PostMessages. Megagroups
+		// (Megagroup=true) allow regular member posts unless banned.
+		if ch.Broadcast {
+			ar, ok := ch.GetAdminRights()
+			if !ok || !ar.PostMessages {
+				return errors.New("verify post rights: target is a broadcast channel and account lacks PostMessages admin right")
+			}
+		}
+		return nil
+	}
+	return fmt.Errorf("verify post rights: channel %d not found in getFullChannel response", chatID)
+}
