@@ -81,9 +81,7 @@ func New(pool session.Pool, tracker Tracker, gate *session.FloodGate, rec Record
 func (u *Uploader) Run(ctx context.Context, in <-chan types.OutputFile) error {
 	var wg sync.WaitGroup
 	for range u.cfg.Sessions {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for {
 				select {
 				case <-ctx.Done():
@@ -109,7 +107,7 @@ func (u *Uploader) Run(ctx context.Context, in <-chan types.OutputFile) error {
 					}
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	return nil
@@ -127,10 +125,7 @@ func (u *Uploader) uploadOne(ctx context.Context, of types.OutputFile) error {
 	}
 	defer f.Close()
 
-	fileID, err := randomInt64()
-	if err != nil {
-		return fmt.Errorf("uploadOne: fileID: %w", err)
-	}
+	fileID := mustRandomInt64()
 	totalParts := int((of.SizeBytes + int64(partSize) - 1) / int64(partSize))
 
 	// Bounded buffer pool: ParallelParts buffers, each partSize bytes.
@@ -142,7 +137,6 @@ func (u *Uploader) uploadOne(ctx context.Context, of types.OutputFile) error {
 
 	g, gctx := errgroup.WithContext(ctx)
 	for partIdx := range totalParts {
-		idx := partIdx
 		// Acquire a buffer (blocks if all ParallelParts are in-flight).
 		var buf []byte
 		select {
@@ -153,18 +147,18 @@ func (u *Uploader) uploadOne(ctx context.Context, of types.OutputFile) error {
 		g.Go(func() error {
 			defer func() { bufCh <- buf[:cap(buf)] }()
 			// Read THIS part from disk inside the goroutine — no whole-file load.
-			n, rerr := f.ReadAt(buf, int64(idx)*int64(partSize))
+			n, rerr := f.ReadAt(buf, int64(partIdx)*int64(partSize))
 			if rerr != nil && !errors.Is(rerr, io.EOF) {
-				return fmt.Errorf("read part %d: %w", idx, rerr)
+				return fmt.Errorf("read part %d: %w", partIdx, rerr)
 			}
 			part := buf[:n]
 			if len(part) == 0 {
-				return fmt.Errorf("part %d: zero bytes read", idx)
+				return fmt.Errorf("part %d: zero bytes read", partIdx)
 			}
 			return retry.WithBackoff(gctx, 5, func() error {
 				_, err := u.api.UploadSaveFilePart(gctx, &tg.UploadSaveFilePartRequest{
 					FileID:   fileID,
-					FilePart: idx,
+					FilePart: partIdx,
 					Bytes:    part,
 				})
 				if err != nil {
