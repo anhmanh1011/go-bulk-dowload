@@ -191,5 +191,25 @@ func (s *Store) Stats(ctx context.Context) (Stats, error) {
 	return st, rows.Err()
 }
 
+// ResetStatus flips all jobs in `from` state back to `to` state. Used by the
+// retry CLI to re-queue failed jobs.
+func (s *Store) ResetStatus(ctx context.Context, from, to JobStatus) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE jobs SET status=?, updated_at=?, retries=0, error_msg='' WHERE status=?`,
+		string(to), time.Now().Unix(), string(from),
+	)
+	return err
+}
+
+// ResetMsgID flips a specific msg_id back to pending. Used by the reset CLI
+// for manual recovery of individual rows.
+func (s *Store) ResetMsgID(ctx context.Context, msgID int64) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE jobs SET status=?, updated_at=?, retries=0, error_msg='' WHERE msg_id=?`,
+		string(StatusPending), time.Now().Unix(), msgID,
+	)
+	return err
+}
+
 // Sentinel error for callers that want to distinguish.
 var ErrNotFound = errors.New("not found")
