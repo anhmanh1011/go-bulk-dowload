@@ -75,6 +75,7 @@ var msRunCmd = &cobra.Command{
 			Processor:      &processor.MicrosoftOnlyExtractor{},
 			BatchSizeMB:    0, // size trigger off — flush by line count
 			BatchSizeLines: cfg.MSFilter.BatchLines,
+			NewestFirst:    true, // process freshest channel uploads before the older backlog
 		})
 		return p.Run(ctx)
 	},

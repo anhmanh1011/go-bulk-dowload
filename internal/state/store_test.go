@@ -56,6 +56,37 @@ func TestStore_InsertAndPick(t *testing.T) {
 	assert.Empty(t, more, "no more pending")
 }
 
+func TestStore_PickPendingOrdering(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	// Oldest-first (default): ascending msg_id.
+	s := mustOpen(t)
+	for _, id := range []int64{3, 1, 5, 2, 4} {
+		require.NoError(t, s.InsertJobIfAbsent(ctx, sampleJob(id)))
+	}
+	jobs, err := s.PickPending(ctx, 3)
+	require.NoError(t, err)
+	got := []int64{}
+	for _, j := range jobs {
+		got = append(got, j.MsgID)
+	}
+	assert.Equal(t, []int64{1, 2, 3}, got, "PickPending claims lowest msg_id first")
+
+	// Newest-first: descending msg_id.
+	s2 := mustOpen(t)
+	for _, id := range []int64{3, 1, 5, 2, 4} {
+		require.NoError(t, s2.InsertJobIfAbsent(ctx, sampleJob(id)))
+	}
+	jobs2, err := s2.PickPendingNewestFirst(ctx, 3)
+	require.NoError(t, err)
+	got2 := []int64{}
+	for _, j := range jobs2 {
+		got2 = append(got2, j.MsgID)
+	}
+	assert.Equal(t, []int64{5, 4, 3}, got2, "PickPendingNewestFirst claims highest msg_id first")
+}
+
 func TestStore_MarkDone(t *testing.T) {
 	t.Parallel()
 	s := mustOpen(t)

@@ -36,8 +36,9 @@ type Options struct {
 	SourceChannel  int64
 	TargetChannel  int64
 	Processor      processor.LineProcessor
-	BatchSizeMB    int // 0 = size trigger disabled (line cap / timer flush)
-	BatchSizeLines int // 0 = line trigger disabled
+	BatchSizeMB    int  // 0 = size trigger disabled (line cap / timer flush)
+	BatchSizeLines int  // 0 = line trigger disabled
+	NewestFirst    bool // claim jobs newest-first (msg_id DESC) instead of oldest-first
 }
 
 // Pipeline owns the long-lived dependencies (config, store, session pools,
@@ -162,7 +163,13 @@ func (p *Pipeline) Run(ctx context.Context) error {
 				return gctx.Err()
 			default:
 			}
-			jobs, err := p.store.PickPending(gctx, batch)
+			var jobs []state.Job
+			var err error
+			if p.opts.NewestFirst {
+				jobs, err = p.store.PickPendingNewestFirst(gctx, batch)
+			} else {
+				jobs, err = p.store.PickPending(gctx, batch)
+			}
 			if err != nil {
 				return err
 			}
