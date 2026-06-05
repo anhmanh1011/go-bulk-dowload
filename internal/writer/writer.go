@@ -19,6 +19,7 @@ type Tracker interface {
 type Config struct {
 	OutputDir        string
 	BatchSizeMB      int
+	BatchSizeLines   int // flush when buffer reaches this many lines (0 = disabled)
 	FlushIntervalSec int
 	OutputChannelCap int
 	BatchSeqStart    int // for tests; production = 1
@@ -51,7 +52,7 @@ func (w *Writer) Run(ctx context.Context, in <-chan types.Record, out chan<- typ
 	var buf bytes.Buffer
 	srcSet := make(map[int64]struct{})
 	lineCount := 0
-	threshold := w.cfg.BatchSizeMB * 1024 * 1024
+	sizeThreshold := w.cfg.BatchSizeMB * 1024 * 1024
 	flushInterval := time.Duration(w.cfg.FlushIntervalSec) * time.Second
 	timer := time.NewTimer(flushInterval)
 	defer timer.Stop()
@@ -137,7 +138,9 @@ func (w *Writer) Run(ctx context.Context, in <-chan types.Record, out chan<- typ
 			buf.WriteByte('\n')
 			srcSet[rec.MsgID] = struct{}{}
 			lineCount++
-			if buf.Len() >= threshold {
+			sizeHit := sizeThreshold > 0 && buf.Len() >= sizeThreshold
+			lineHit := w.cfg.BatchSizeLines > 0 && lineCount >= w.cfg.BatchSizeLines
+			if sizeHit || lineHit {
 				if err := flush(); err != nil {
 					return err
 				}

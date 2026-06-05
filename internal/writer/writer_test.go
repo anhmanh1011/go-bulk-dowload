@@ -163,3 +163,37 @@ func TestWriter_FlushOnShutdownPreservesData(t *testing.T) {
 	files, _ := os.ReadDir(dir)
 	assert.Len(t, files, 1, "expected one flushed file on graceful shutdown")
 }
+
+func TestWriter_FlushOnLineCount(t *testing.T) {
+	dir := t.TempDir()
+	tr := &fakeTracker{}
+	w := writer.New(writer.Config{
+		OutputDir:        dir,
+		BatchSizeMB:      0,    // size trigger disabled
+		BatchSizeLines:   1000, // flush every 1000 lines
+		FlushIntervalSec: 60,
+		BatchSeqStart:    1,
+	}, nil, tr)
+	in := make(chan types.Record, 1024)
+	out := make(chan types.OutputFile, 16)
+	go func() {
+		for range 2500 {
+			in <- types.Record{MsgID: 1, Email: []byte("a@b.com"), Pass: []byte("x")}
+		}
+		close(in)
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	go func() { require.NoError(t, w.Run(ctx, in, out)); close(out) }()
+
+	var sizes []int
+	total := 0
+	for f := range out {
+		sizes = append(sizes, f.LineCount)
+		total += f.LineCount
+	}
+	require.GreaterOrEqual(t, len(sizes), 3, "2500 lines / 1000 → at least 3 files")
+	assert.Equal(t, 1000, sizes[0], "first file flushes at exactly 1000 lines")
+	assert.Equal(t, 1000, sizes[1], "second file flushes at exactly 1000 lines")
+	assert.Equal(t, 2500, total, "no lines lost")
+}
