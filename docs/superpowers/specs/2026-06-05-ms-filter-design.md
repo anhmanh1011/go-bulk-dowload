@@ -122,14 +122,15 @@ domain match against that map.
 - Flush trigger = MB threshold (if set) **OR** line threshold (if set) **OR**
   timer — whichever fires first.
 - `run` keeps `BatchSizeMB` set and `BatchSizeLines = 0` (unchanged).
-- `ms-run` sets `BatchSizeLines = 1_000_000`; `BatchSizeMB` may stay set as a
-  safety ceiling (e.g. keep config default) or be left to the line cap. Decision:
-  keep the MB ceiling active so a pathological run can't buffer unbounded RAM —
-  whichever of {1M lines, MB ceiling} hits first flushes.
+- `ms-run` sets `BatchSizeLines = 1_000_000` and **`BatchSizeMB = 0`** (size
+  trigger disabled). If the MB ceiling stayed at the 15 MB config default it
+  would flush at ~430k lines and never reach 1M, so it must be off. RAM stays
+  bounded anyway: the 1M-line cap caps the buffer at ≈ 35 MB, and the flush
+  timer still flushes a partial tail.
 
 > Size note: 1M `email:pass` lines ≈ 30–40 MB/file, larger than the 15 MB
 > guidance in project memory (large files lengthen each upload on a single
-> account). Accepted per explicit requirement; the MB ceiling stays as a guard.
+> account). Accepted per explicit requirement.
 
 ### 4.4 Pipeline — parameterize source/target/processor/batch
 
