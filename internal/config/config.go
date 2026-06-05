@@ -20,6 +20,7 @@ type Config struct {
 	Backpressure  BackpressureConfig `yaml:"backpressure"`
 	State         StateConfig        `yaml:"state"`
 	Logging       LoggingConfig      `yaml:"logging"`
+	MSFilter      MSFilterConfig     `yaml:"ms_filter"`
 }
 
 type AccountConfig struct {
@@ -72,6 +73,38 @@ type LoggingConfig struct {
 	Level               string `yaml:"level"`
 	Format              string `yaml:"format"`
 	ProgressIntervalSec int    `yaml:"progress_interval_sec"`
+}
+
+// MSFilterConfig configures the ms-crawl / ms-run commands: an isolated second
+// pipeline that mirrors Microsoft consumer email:pass lines into a dedicated
+// channel. Optional — absent unless those commands are used.
+type MSFilterConfig struct {
+	SourceChannel int64  `yaml:"source_channel"`
+	TargetChannel int64  `yaml:"target_channel"`
+	DBPath        string `yaml:"db_path"`
+	BatchLines    int    `yaml:"batch_lines"`
+}
+
+// Validate checks the ms_filter block is complete. Called by the ms-crawl /
+// ms-run commands (not by Config.Validate, so `run` works without this block).
+func (m MSFilterConfig) Validate() error {
+	var errs []error
+	if m.SourceChannel == 0 {
+		errs = append(errs, errors.New("ms_filter.source_channel must be set"))
+	}
+	if m.TargetChannel == 0 {
+		errs = append(errs, errors.New("ms_filter.target_channel must be set"))
+	}
+	if m.SourceChannel != 0 && m.SourceChannel == m.TargetChannel {
+		errs = append(errs, errors.New("ms_filter.source_channel and target_channel must differ"))
+	}
+	if m.DBPath == "" {
+		errs = append(errs, errors.New("ms_filter.db_path must be set"))
+	}
+	if m.BatchLines <= 0 {
+		errs = append(errs, errors.New("ms_filter.batch_lines must be > 0"))
+	}
+	return errors.Join(errs...)
 }
 
 func Load(path string) (*Config, error) {
