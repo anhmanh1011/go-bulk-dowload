@@ -29,6 +29,17 @@ import (
 	"github.com/manh/tgpipe/internal/writer"
 )
 
+// Options carries the per-run parameters that differ between the main `run`
+// pipeline and the `ms-run` pipeline: which channels to move data between, the
+// Stage-3 processor implementation, and the writer's batch thresholds.
+type Options struct {
+	SourceChannel  int64
+	TargetChannel  int64
+	Processor      processor.LineProcessor
+	BatchSizeMB    int // 0 = size trigger disabled (line cap / timer flush)
+	BatchSizeLines int // 0 = line trigger disabled
+}
+
 // Pipeline owns the long-lived dependencies (config, store, session pools,
 // flood gate, tracker, counters) and constructs/runs the per-run dataflow.
 type Pipeline struct {
@@ -39,11 +50,12 @@ type Pipeline struct {
 	gate       *session.FloodGate
 	tracker    *tracker.SourceTracker
 	counters   *telemetry.Counters
+	opts       Options
 }
 
 // New constructs a Pipeline. Caller retains ownership of cfg, store, pools,
 // and gate — Run does not close any of them.
-func New(cfg *config.Config, store *state.Store, fetchPool, uploadPool session.Pool, gate *session.FloodGate) *Pipeline {
+func New(cfg *config.Config, store *state.Store, fetchPool, uploadPool session.Pool, gate *session.FloodGate, opts Options) *Pipeline {
 	return &Pipeline{
 		cfg:        cfg,
 		store:      store,
@@ -52,6 +64,7 @@ func New(cfg *config.Config, store *state.Store, fetchPool, uploadPool session.P
 		gate:       gate,
 		tracker:    tracker.New(store),
 		counters:   &telemetry.Counters{},
+		opts:       opts,
 	}
 }
 
@@ -68,22 +81,22 @@ func (p *Pipeline) Run(ctx context.Context) error {
 	// passes srcHash into the crawler, but the pipeline itself only needs
 	// dstHash to upload (jobs already carry chat_access_hash per-row for the
 	// fetch side, populated by the crawler).
-	srcHash, err := channels.Resolve(ctx, p.fetchPool, p.cfg.SourceChannel)
+	srcHash, err := channels.Resolve(ctx, p.fetchPool, p.opts.SourceChannel)
 	if err != nil {
 		return fmt.Errorf("resolve source channel access hash: %w", err)
 	}
-	dstHash, err := channels.Resolve(ctx, p.uploadPool, p.cfg.TargetChannel)
+	dstHash, err := channels.Resolve(ctx, p.uploadPool, p.opts.TargetChannel)
 	if err != nil {
 		return fmt.Errorf("resolve target channel access hash: %w", err)
 	}
 	// Spec §0 Q9: precheck Channel B for post rights — fail-fast at startup
 	// rather than after the first batch reaches the uploader.
-	if err := channels.VerifyPostRights(ctx, p.uploadPool, p.cfg.TargetChannel, dstHash); err != nil {
+	if err := channels.VerifyPostRights(ctx, p.uploadPool, p.opts.TargetChannel, dstHash); err != nil {
 		return fmt.Errorf("verify target channel post rights: %w", err)
 	}
 	slog.Info("channels resolved", "stage", "pipeline",
-		"source", p.cfg.SourceChannel, "src_hash", srcHash,
-		"target", p.cfg.TargetChannel)
+		"source", p.opts.SourceChannel, "src_hash", srcHash,
+		"target", p.opts.TargetChannel)
 
 	jobsCh := make(chan state.Job, p.cfg.Fetcher.JobChannelCap)
 	chunkCh := make(chan types.Chunk, p.cfg.Fetcher.ChunkChannelCap)
@@ -120,11 +133,12 @@ func (p *Pipeline) Run(ctx context.Context) error {
 		MaxRetriesPerJob:   p.cfg.Fetcher.MaxRetriesPerJob,
 	})
 	spl := splitter.New(splWorkers, p.tracker)
-	proc := processor.New(procWorkers, &processor.UrlUserPassExtractor{}, p.counters)
+	proc := processor.New(procWorkers, p.opts.Processor, p.counters)
 	bp := writer.NewBackpressureGate(p.cfg.Writer.OutputDir, p.cfg.Backpressure.MaxPendingOutputFiles)
 	w := writer.New(writer.Config{
 		OutputDir:        p.cfg.Writer.OutputDir,
-		BatchSizeMB:      p.cfg.Writer.BatchSizeMB,
+		BatchSizeMB:      p.opts.BatchSizeMB,
+		BatchSizeLines:   p.opts.BatchSizeLines,
 		FlushIntervalSec: p.cfg.Writer.FlushIntervalSec,
 		OutputChannelCap: p.cfg.Writer.OutputChannelCap,
 		BatchSeqStart:    1,
@@ -132,7 +146,7 @@ func (p *Pipeline) Run(ctx context.Context) error {
 	up := uploader.New(p.uploadPool, p.tracker, p.gate, p.counters, uploader.Config{
 		Sessions:         p.cfg.Uploader.Sessions,
 		ParallelParts:    p.cfg.Uploader.ParallelParts,
-		TargetChannel:    p.cfg.TargetChannel,
+		TargetChannel:    p.opts.TargetChannel,
 		TargetAccessHash: dstHash,
 	})
 
