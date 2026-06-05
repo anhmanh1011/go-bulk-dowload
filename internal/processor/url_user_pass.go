@@ -25,54 +25,57 @@ type UrlUserPassExtractor struct{}
 var _ LineProcessor = (*UrlUserPassExtractor)(nil)
 
 func (e *UrlUserPassExtractor) Process(line []byte) (types.Record, bool, error) {
+	email, pass, ok := extractEmailPass(line)
+	if !ok {
+		return types.Record{}, false, nil
+	}
+	// Valid email but the provider blocks basic-auth IMAP → useless to a plain
+	// email:password scanner, so drop.
+	if isPlainIMAPDisabled(email) {
+		return types.Record{}, false, nil
+	}
+	// Email and Pass alias `line`; splitter delivers a fresh copy per line, so
+	// retaining the sub-slices is safe.
+	return types.Record{Email: email, Pass: pass}, true, nil
+}
+
+// extractEmailPass scans line for the first valid email:pass anchor, searching
+// colons from the right. For each colon it treats everything after as the pass
+// and the segment between the previous colon and this one as the candidate user;
+// it accepts the first candidate whose user is a valid email and whose pass is
+// non-empty (skipping empty-pass anchors by moving further left). A trailing
+// CR on pass (from CRLF input) is stripped. Returns ok=false when no anchor
+// qualifies. The returned slices alias line.
+func extractEmailPass(line []byte) (email, pass []byte, ok bool) {
 	n := len(line)
 	if n == 0 {
-		return types.Record{}, false, nil
+		return nil, nil, false
 	}
-	// Drop trivially malformed: no colon, or trailing colon (empty pass).
 	lastColon := bytes.LastIndexByte(line, ':')
 	if lastColon <= 0 || lastColon == n-1 {
-		return types.Record{}, false, nil
+		return nil, nil, false
 	}
-
-	// Scan candidate split points from the right. For each colon c at
-	// position i, the candidate user segment is line[prev+1 : i] where
-	// prev is the next colon to the left (or -1 if none). The candidate
-	// pass is line[i+1:]. Accept the first candidate whose user is a
-	// valid email and whose pass is non-empty.
-	right := n // exclusive upper bound for the current "left half" search
+	right := n
 	for {
 		i := bytes.LastIndexByte(line[:right], ':')
 		if i < 0 {
-			break
+			return nil, nil, false
 		}
-		pass := line[i+1:]
-		// Defensive: strip a trailing CR so CRLF-terminated input doesn't
-		// produce records with embedded carriage returns. Splitter splits
-		// on '\n' only, so a stray '\r' can ride along on the last field.
-		if len(pass) > 0 && pass[len(pass)-1] == '\r' {
-			pass = pass[:len(pass)-1]
+		p := line[i+1:]
+		if len(p) > 0 && p[len(p)-1] == '\r' {
+			p = p[:len(p)-1]
 		}
-		if len(pass) == 0 {
-			// Empty pass for this anchor — try a further-left colon.
+		if len(p) == 0 {
 			right = i
 			continue
 		}
 		prev := bytes.LastIndexByte(line[:i], ':')
-		user := line[prev+1 : i]
-		if isValidEmail(user) {
-			if isPlainIMAPDisabled(user) {
-				// Valid email but the provider blocks basic-auth IMAP; further-left
-				// splits won't change the domain on this candidate, so just drop.
-				return types.Record{}, false, nil
-			}
-			// Email and Pass are sub-slices of `line`; splitter delivers a fresh copy
-			// per line, so they are safe to retain without our own copy.
-			return types.Record{Email: user, Pass: pass}, true, nil
+		u := line[prev+1 : i]
+		if isValidEmail(u) {
+			return u, p, true
 		}
 		right = i
 	}
-	return types.Record{}, false, nil
 }
 
 // isValidEmail is a deliberately minimal check (no regex):
