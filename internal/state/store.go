@@ -59,7 +59,27 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', '', ?, ?)`,
 	return nil
 }
 
+// PickPending claims up to n pending jobs oldest-first (ascending msg_id) and
+// flips them to in_progress in one transaction. Used by the main `run` pipeline.
 func (s *Store) PickPending(ctx context.Context, n int) ([]Job, error) {
+	return s.pickPending(ctx, n, false)
+}
+
+// PickPendingNewestFirst is like PickPending but claims jobs newest-first
+// (descending msg_id). Used by the ms-run pipeline so the freshest channel
+// uploads are processed before the older (and often much larger) backlog.
+func (s *Store) PickPendingNewestFirst(ctx context.Context, n int) ([]Job, error) {
+	return s.pickPending(ctx, n, true)
+}
+
+// pickPending is the shared implementation. newestFirst selects the ORDER BY
+// direction; the value is a fixed internal literal (never user input), so
+// concatenating it into the query is safe.
+func (s *Store) pickPending(ctx context.Context, n int, newestFirst bool) ([]Job, error) {
+	order := "msg_id"
+	if newestFirst {
+		order = "msg_id DESC"
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
@@ -68,7 +88,7 @@ func (s *Store) PickPending(ctx context.Context, n int) ([]Job, error) {
 	rows, err := tx.QueryContext(ctx,
 		`SELECT msg_id, chat_id, chat_access_hash, file_id, access_hash, file_reference, dc_id, size,
                 file_name, mime_type, retries, output_path, error_msg, created_at, updated_at
-         FROM jobs WHERE status = ? ORDER BY msg_id LIMIT ?`,
+         FROM jobs WHERE status = ? ORDER BY `+order+` LIMIT ?`,
 		string(StatusPending), n,
 	)
 	if err != nil {

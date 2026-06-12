@@ -9,6 +9,7 @@ import (
 	"github.com/manh/tgpipe/internal/config"
 	"github.com/manh/tgpipe/internal/logging"
 	"github.com/manh/tgpipe/internal/pipeline"
+	"github.com/manh/tgpipe/internal/processor"
 	"github.com/manh/tgpipe/internal/session"
 	"github.com/manh/tgpipe/internal/state"
 )
@@ -64,7 +65,13 @@ var runCmd = &cobra.Command{
 			return err
 		}
 		defer uploadPool.Close()
-		p := pipeline.New(cfg, store, fetchPool, uploadPool, gate)
+		p := pipeline.New(cfg, store, fetchPool, uploadPool, gate, pipeline.Options{
+			SourceChannel: cfg.SourceChannel,
+			TargetChannel: cfg.TargetChannel,
+			Processor:     &processor.UrlUserPassExtractor{},
+			BatchSizeMB:   cfg.Writer.BatchSizeMB,
+			// BatchSizeLines left 0 — run flushes by MB, unchanged.
+		})
 		return p.Run(ctx)
 	},
 }

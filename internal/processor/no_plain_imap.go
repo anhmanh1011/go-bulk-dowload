@@ -24,71 +24,35 @@ var noPlainIMAP = map[string]struct{}{
 	"googlemail.com": {},
 
 	// Yahoo (regional + legacy brands)
-	"yahoo.com":     {},
-	"ymail.com":     {},
+	"yahoo.com":      {},
+	"ymail.com":      {},
 	"rocketmail.com": {},
-	"yahoo.co.uk":   {},
-	"yahoo.fr":      {},
-	"yahoo.de":      {},
-	"yahoo.es":      {},
-	"yahoo.it":      {},
-	"yahoo.co.jp":   {},
-	"yahoo.co.kr":   {},
-	"yahoo.co.in":   {},
-	"yahoo.ca":      {},
-	"yahoo.in":      {},
-	"yahoo.com.br":  {},
-	"yahoo.com.au":  {},
-	"yahoo.com.sg":  {},
-	"yahoo.com.vn":  {},
-	"yahoo.com.tw":  {},
-	"yahoo.com.hk":  {},
-	"yahoo.com.mx":  {},
-	"yahoo.com.ar":  {},
-	"yahoo.com.ph":  {},
-	"yahoo.com.tr":  {},
-	"yahoo.com.cn":  {},
+	"yahoo.co.uk":    {},
+	"yahoo.fr":       {},
+	"yahoo.de":       {},
+	"yahoo.es":       {},
+	"yahoo.it":       {},
+	"yahoo.co.jp":    {},
+	"yahoo.co.kr":    {},
+	"yahoo.co.in":    {},
+	"yahoo.ca":       {},
+	"yahoo.in":       {},
+	"yahoo.com.br":   {},
+	"yahoo.com.au":   {},
+	"yahoo.com.sg":   {},
+	"yahoo.com.vn":   {},
+	"yahoo.com.tw":   {},
+	"yahoo.com.hk":   {},
+	"yahoo.com.mx":   {},
+	"yahoo.com.ar":   {},
+	"yahoo.com.ph":   {},
+	"yahoo.com.tr":   {},
+	"yahoo.com.cn":   {},
 
 	// AOL (now under Yahoo)
 	"aol.com":   {},
 	"aol.co.uk": {},
 	"aim.com":   {},
-
-	// Microsoft consumer (outlook.com / hotmail / live / msn)
-	"outlook.com":    {},
-	"outlook.co.uk":  {},
-	"outlook.fr":     {},
-	"outlook.de":     {},
-	"outlook.es":     {},
-	"outlook.it":     {},
-	"outlook.jp":     {},
-	"outlook.com.br": {},
-	"outlook.com.au": {},
-	"hotmail.com":    {},
-	"hotmail.co.uk":  {},
-	"hotmail.fr":     {},
-	"hotmail.de":     {},
-	"hotmail.es":     {},
-	"hotmail.it":     {},
-	"hotmail.com.br": {},
-	"hotmail.com.ar": {},
-	"hotmail.com.au": {},
-	"live.com":       {},
-	"live.co.uk":     {},
-	"live.fr":        {},
-	"live.de":        {},
-	"live.it":        {},
-	"live.nl":        {},
-	"live.dk":        {},
-	"live.se":        {},
-	"live.no":        {},
-	"live.ca":        {},
-	"live.in":        {},
-	"live.jp":        {},
-	"live.com.au":    {},
-	"live.com.mx":    {},
-	"msn.com":        {},
-	"windowslive.com": {},
 
 	// Apple iCloud
 	"icloud.com": {},
@@ -111,7 +75,9 @@ func isPlainIMAPDisabled(email []byte) bool {
 	if at < 0 {
 		return false
 	}
-	domain := bytes.ToLower(email[at+1:])
-	_, found := noPlainIMAP[string(domain)]
-	return found
+	domain := string(bytes.ToLower(email[at+1:]))
+	if _, found := noPlainIMAP[domain]; found {
+		return true
+	}
+	return isMicrosoftConsumerDomain(domain)
 }

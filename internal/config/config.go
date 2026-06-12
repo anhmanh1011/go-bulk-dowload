@@ -9,17 +9,19 @@ import (
 )
 
 type Config struct {
-	Account       AccountConfig      `yaml:"account"`
-	SourceChannel int64              `yaml:"source_channel"`
-	TargetChannel int64              `yaml:"target_channel"`
-	Fetcher       FetcherConfig      `yaml:"fetcher"`
-	Splitter      SplitterConfig     `yaml:"splitter"`
-	Processor     ProcessorConfig    `yaml:"processor"`
-	Writer        WriterConfig       `yaml:"writer"`
-	Uploader      UploaderConfig     `yaml:"uploader"`
-	Backpressure  BackpressureConfig `yaml:"backpressure"`
-	State         StateConfig        `yaml:"state"`
-	Logging       LoggingConfig      `yaml:"logging"`
+	Account        AccountConfig       `yaml:"account"`
+	SourceChannel  int64               `yaml:"source_channel"`
+	TargetChannel  int64               `yaml:"target_channel"`
+	Fetcher        FetcherConfig       `yaml:"fetcher"`
+	Splitter       SplitterConfig      `yaml:"splitter"`
+	Processor      ProcessorConfig     `yaml:"processor"`
+	Writer         WriterConfig        `yaml:"writer"`
+	Uploader       UploaderConfig      `yaml:"uploader"`
+	Backpressure   BackpressureConfig  `yaml:"backpressure"`
+	State          StateConfig         `yaml:"state"`
+	Logging        LoggingConfig       `yaml:"logging"`
+	MSFilter       MSFilterConfig      `yaml:"ms_filter"`
+	GodaddyFilter  GodaddyFilterConfig `yaml:"godaddy_filter"`
 }
 
 type AccountConfig struct {
@@ -72,6 +74,71 @@ type LoggingConfig struct {
 	Level               string `yaml:"level"`
 	Format              string `yaml:"format"`
 	ProgressIntervalSec int    `yaml:"progress_interval_sec"`
+}
+
+// MSFilterConfig configures the ms-crawl / ms-run commands: an isolated second
+// pipeline that mirrors Microsoft consumer email:pass lines into a dedicated
+// channel. Optional — absent unless those commands are used.
+type MSFilterConfig struct {
+	SourceChannel int64  `yaml:"source_channel"`
+	TargetChannel int64  `yaml:"target_channel"`
+	DBPath        string `yaml:"db_path"`
+	BatchLines    int    `yaml:"batch_lines"`
+}
+
+// GodaddyFilterConfig configures the godaddy-crawl / godaddy-run commands:
+// an isolated pipeline that keeps lines containing "godaddy.com" (combo-list
+// entries with a GoDaddy URL, or raw e-mail content where From is
+// donotreply@godaddy.com). Optional — absent unless those commands are used.
+type GodaddyFilterConfig struct {
+	SourceChannel int64  `yaml:"source_channel"`
+	TargetChannel int64  `yaml:"target_channel"`
+	DBPath        string `yaml:"db_path"`
+	BatchLines    int    `yaml:"batch_lines"`
+}
+
+// Validate checks the godaddy_filter block is complete. Called by
+// godaddy-crawl / godaddy-run (not by Config.Validate).
+func (g GodaddyFilterConfig) Validate() error {
+	var errs []error
+	if g.SourceChannel == 0 {
+		errs = append(errs, errors.New("godaddy_filter.source_channel must be set"))
+	}
+	if g.TargetChannel == 0 {
+		errs = append(errs, errors.New("godaddy_filter.target_channel must be set"))
+	}
+	if g.SourceChannel != 0 && g.SourceChannel == g.TargetChannel {
+		errs = append(errs, errors.New("godaddy_filter.source_channel and target_channel must differ"))
+	}
+	if g.DBPath == "" {
+		errs = append(errs, errors.New("godaddy_filter.db_path must be set"))
+	}
+	if g.BatchLines <= 0 {
+		errs = append(errs, errors.New("godaddy_filter.batch_lines must be > 0"))
+	}
+	return errors.Join(errs...)
+}
+
+// Validate checks the ms_filter block is complete. Called by the ms-crawl /
+// ms-run commands (not by Config.Validate, so `run` works without this block).
+func (m MSFilterConfig) Validate() error {
+	var errs []error
+	if m.SourceChannel == 0 {
+		errs = append(errs, errors.New("ms_filter.source_channel must be set"))
+	}
+	if m.TargetChannel == 0 {
+		errs = append(errs, errors.New("ms_filter.target_channel must be set"))
+	}
+	if m.SourceChannel != 0 && m.SourceChannel == m.TargetChannel {
+		errs = append(errs, errors.New("ms_filter.source_channel and target_channel must differ"))
+	}
+	if m.DBPath == "" {
+		errs = append(errs, errors.New("ms_filter.db_path must be set"))
+	}
+	if m.BatchLines <= 0 {
+		errs = append(errs, errors.New("ms_filter.batch_lines must be > 0"))
+	}
+	return errors.Join(errs...)
 }
 
 func Load(path string) (*Config, error) {

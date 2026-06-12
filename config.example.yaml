@@ -4,7 +4,7 @@ account:
   session_file: sessions/main.session
 
 source_channel: -1001234567890
-target_channel: -1009876543210
+target_channel: -3880595857
 
 fetcher:
   sessions: 6
@@ -43,3 +43,9 @@ logging:
   level: info
   format: json
   progress_interval_sec: 30
+
+ms_filter:
+  source_channel: 4298264668   # TTT LINK:LOGPASS CLONE (input)
+  target_channel: 3585587034   # HOTMAIL_COMBO (output)
+  db_path: ./ms_state.db       # separate jobs DB — avoids msg_id collision with run
+  batch_lines: 1000000         # flush + upload every 1,000,000 lines (~35 MB/file)

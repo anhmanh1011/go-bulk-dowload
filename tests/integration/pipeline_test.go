@@ -14,6 +14,7 @@ import (
 
 	"github.com/manh/tgpipe/internal/config"
 	"github.com/manh/tgpipe/internal/pipeline"
+	"github.com/manh/tgpipe/internal/processor"
 	"github.com/manh/tgpipe/internal/session"
 	"github.com/manh/tgpipe/internal/state"
 )
@@ -181,7 +182,12 @@ func TestPipeline_EndToEnd(t *testing.T) {
 		Logging:      config.LoggingConfig{Level: "info", Format: "text", ProgressIntervalSec: 60},
 	}
 
-	p := pipeline.New(cfg, store, pool, pool, &session.FloodGate{})
+	p := pipeline.New(cfg, store, pool, pool, &session.FloodGate{}, pipeline.Options{
+		SourceChannel: cfg.SourceChannel,
+		TargetChannel: cfg.TargetChannel,
+		Processor:     &processor.UrlUserPassExtractor{},
+		BatchSizeMB:   cfg.Writer.BatchSizeMB,
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	require.NoError(t, p.Run(ctx))

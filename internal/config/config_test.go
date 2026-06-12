@@ -109,3 +109,28 @@ logging: {level: info, format: text, progress_interval_sec: 1}
 	assert.Contains(t, err.Error(), "account.api_hash")
 	assert.Contains(t, err.Error(), "account.session_file")
 }
+
+func TestMSFilterConfig_Validate(t *testing.T) {
+	ok := config.MSFilterConfig{
+		SourceChannel: 4298264668,
+		TargetChannel: 3585587034,
+		DBPath:        "./ms_state.db",
+		BatchLines:    1000000,
+	}
+	if err := ok.Validate(); err != nil {
+		t.Fatalf("valid config rejected: %v", err)
+	}
+
+	bad := []config.MSFilterConfig{
+		{TargetChannel: 2, DBPath: "x", BatchLines: 1},                   // missing source
+		{SourceChannel: 1, DBPath: "x", BatchLines: 1},                   // missing target
+		{SourceChannel: 1, TargetChannel: 2, BatchLines: 1},              // missing db_path
+		{SourceChannel: 1, TargetChannel: 2, DBPath: "x"},                // batch_lines 0
+		{SourceChannel: 7, TargetChannel: 7, DBPath: "x", BatchLines: 1}, // source == target
+	}
+	for i, c := range bad {
+		if err := c.Validate(); err == nil {
+			t.Errorf("case %d: expected validation error, got nil", i)
+		}
+	}
+}
