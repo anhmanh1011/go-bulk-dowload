@@ -133,8 +133,10 @@ func (w *Writer) Run(ctx context.Context, in <-chan types.Record, out chan<- typ
 				return flush()
 			}
 			buf.Write(rec.Email)
-			buf.WriteByte(':')
-			buf.Write(rec.Pass)
+			if len(rec.Pass) > 0 {
+				buf.WriteByte(':')
+				buf.Write(rec.Pass)
+			}
 			buf.WriteByte('\n')
 			srcSet[rec.MsgID] = struct{}{}
 			lineCount++

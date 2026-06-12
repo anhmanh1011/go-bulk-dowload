@@ -12,8 +12,12 @@ coverage.html
 *.db
 *.db-wal
 *.db-shm
+/logs/
 /out/
+/session/
 /sessions/
+combined.txt
+combined.clean.txt
 
 # Config (only committed: config.example.yaml)
 config.yaml

@@ -33,7 +33,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgPath, "config", "config.yaml", "path to config YAML")
 	rootCmd.PersistentFlags().BoolVar(&debugPprof, "debug-pprof", false, "enable pprof on 127.0.0.1:6060")
 	rootCmd.PersistentFlags().StringVar(&logLevelFlag, "log-level", "", "override logging.level (debug|info|warn|error)")
-	rootCmd.AddCommand(authCmd, dialogsCmd, crawlCmd, runCmd, statsCmd, retryCmd, resetCmd, pullCmd, pullFileCmd, forwardCmd, msCrawlCmd, msRunCmd)
+	rootCmd.AddCommand(authCmd, dialogsCmd, joinCmd, crawlCmd, runCmd, statsCmd, retryCmd, resetCmd, pullCmd, pullFileCmd, forwardCmd, msCrawlCmd, msRunCmd, godaddyCrawlCmd, godaddyRunCmd, godaddyDumpCmd)
 }
 
 // resolveLogLevel returns the effective log level: CLI flag wins over config.
